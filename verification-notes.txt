@@ -1,0 +1,9 @@
+UI verification notes — 2026-08-15
+
+1. Local Vite preview at http://localhost:1420 loaded successfully.
+2. Default product name and numeric barcode input were visible with barcode type controls, sizing, colors, readable-text toggle, batch input, result library, and export actions.
+3. Clicking "生成条形码" generated a valid EAN13 preview from 6921234567890, updated the generated-result counter to 1, rendered both stage and result-card SVG previews, and reported success.
+4. Visual review: desktop two-column workspace, cards, text contrast, and state indicators rendered correctly at the captured viewport.
+5. Clicking "填充示例" populated the batch editor with a header plus four products. Clicking "批量生成" created all four records, raised the result counter from 1 to 5, and rendered EAN13 and CODE128 cards together. The success state reported four newly generated barcodes.
+6. Exporting the current SVG in browser preview mode downloaded a file named 经典咖啡豆-250g.svg and showed a success message.
+7. Exporting all five records downloaded a ZIP archive and showed a success message. The batch export creates individual SVG entries plus 清单.json in the archive.
