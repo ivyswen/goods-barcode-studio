@@ -3,7 +3,7 @@ import { computed, ref, reactive, watch, onMounted, nextTick } from "vue";
 import JsBarcode from "jsbarcode";
 import JSZip from "jszip";
 import { save, open } from "@tauri-apps/plugin-dialog";
-import { writeFile } from "@tauri-apps/plugin-fs";
+import { writeFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./styles.css";
 import PrintModal from "./components/PrintModal.vue";
@@ -149,8 +149,17 @@ watch(
 // 初始化加载
 loadSavedUiSettings();
 
-// 优雅展示：等待 DOM 挂载和页面首帧完成渲染后再展示窗口，彻底消除启动白屏与闪烁
+// 优雅展示与全局事件处理
 onMounted(async () => {
+  // 点击外部自动收起下拉菜单
+  window.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest(".dropdown-wrap")) {
+      showSettingsDropdown.value = false;
+      showSingleDropdown.value = false;
+    }
+  });
+
   if (isTauri) {
     try {
       const appWindow = getCurrentWebviewWindow();
@@ -171,13 +180,40 @@ onMounted(async () => {
 async function exportFullBackupConfig() {
   showSettingsDropdown.value = false;
   try {
+    saveUiSettings();
+
+    let savedUi = {};
+    try {
+      savedUi = JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || "{}");
+    } catch {
+      savedUi = {};
+    }
+
+    let savedPrint = {};
+    try {
+      savedPrint = JSON.parse(localStorage.getItem("goods_barcode_print_settings_v1") || "{}");
+    } catch {
+      savedPrint = {};
+    }
+
     const backupData = {
       app: "goods-barcode-studio",
-      version: "0.1.0",
+      version: "0.1.1",
       exportedAt: new Date().toISOString(),
-      uiSettings: JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || "{}"),
-      printSettings: JSON.parse(localStorage.getItem("goods_barcode_print_settings_v1") || "{}"),
+      uiSettings: Object.keys(savedUi).length > 0 ? savedUi : {
+        selectedFormat: selectedFormat.value,
+        barWidth: barWidth.value,
+        barHeight: barHeight.value,
+        lineColor: lineColor.value,
+        backgroundColor: backgroundColor.value,
+        showText: showText.value,
+        productName: productName.value,
+        barcodeValue: barcodeValue.value,
+        exportConfig: { ...exportConfig },
+      },
+      printSettings: savedPrint,
     };
+
     const jsonStr = JSON.stringify(backupData, null, 2);
     const fileName = `条码工坊_配置备份_${new Date().toISOString().slice(0, 10)}.json`;
     const payload = new TextEncoder().encode(jsonStr);
@@ -195,13 +231,50 @@ async function exportFullBackupConfig() {
       setStatus("已下载配置文件备份包！换电脑时导入该文件即可无缝恢复所有参数。", "success");
     }
   } catch (error) {
+    console.error("导出配置备份异常:", error);
     setStatus(error instanceof Error ? `备份导出失败：${error.message}` : "导出配置失败", "error");
   }
 }
 
+// 导入全量配置数据（内部解析应用）
+function applyBackupJson(jsonText: string) {
+  try {
+    const data = JSON.parse(jsonText);
+    if (!data || typeof data !== "object") {
+      throw new Error("无效的 JSON 格式");
+    }
+    if (data.uiSettings && typeof data.uiSettings === "object") {
+      localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(data.uiSettings));
+      loadSavedUiSettings();
+    }
+    if (data.printSettings && typeof data.printSettings === "object") {
+      localStorage.setItem("goods_barcode_print_settings_v1", JSON.stringify(data.printSettings));
+    }
+    setStatus("已成功导入配置！所有条码生成参数、导出习惯与打印模板均已同步恢复。", "success");
+  } catch (err) {
+    console.error("导入配置失败:", err);
+    setStatus("导入失败：所选文件不是有效的条码工坊备份配置。", "error");
+  }
+}
+
 // 触发选择备份文件
-function triggerImportConfig() {
+async function triggerImportConfig() {
   showSettingsDropdown.value = false;
+  if (isTauri) {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "JSON 配置文件", extensions: ["json"] }],
+        title: "选择条码工坊配置备份文件",
+      });
+      if (!selected || typeof selected !== "string") return;
+      const text = await readTextFile(selected);
+      applyBackupJson(text);
+      return;
+    } catch (err) {
+      console.warn("Tauri open dialog 失败，降级到文件选择器:", err);
+    }
+  }
   backupFileInput.value?.click();
 }
 
@@ -213,20 +286,8 @@ function handleImportConfigFile(event: Event) {
 
   const reader = new FileReader();
   reader.onload = (e) => {
-    try {
-      const text = e.target?.result as string;
-      const data = JSON.parse(text);
-      if (data.uiSettings) {
-        localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(data.uiSettings));
-        loadSavedUiSettings();
-      }
-      if (data.printSettings) {
-        localStorage.setItem("goods_barcode_print_settings_v1", JSON.stringify(data.printSettings));
-      }
-      setStatus("已成功导入配置！所有条码生成参数、导出习惯与打印模板均已同步恢复。", "success");
-    } catch {
-      setStatus("导入失败：所选文件不是有效的条码工坊备份配置。", "error");
-    }
+    const text = (e.target?.result as string) || "";
+    applyBackupJson(text);
   };
   reader.readAsText(file);
   input.value = "";

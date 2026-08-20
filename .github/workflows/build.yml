@@ -9,10 +9,10 @@ on:
         type: boolean
         default: true
       release_tag:
-        description: 'Release 版本号 Tag (如 v0.1.0)'
+        description: 'Release 版本号 Tag (如 v0.1.1)'
         required: false
         type: string
-        default: 'v0.1.0'
+        default: 'v0.1.1'
       is_draft:
         description: '是否保存为草稿 Draft (不直接公开发布)'
         required: false

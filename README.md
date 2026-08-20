@@ -79,7 +79,7 @@ pnpm build
 pnpm tauri build
 ```
 
-打包产物位于 `src-tauri/target/release/bundle/nsis/条码工坊_0.1.0_x64-setup.exe`。
+打包产物位于 `src-tauri/target/release/bundle/nsis/条码工坊_0.1.1_x64-setup.exe`。
 
 ---
 
