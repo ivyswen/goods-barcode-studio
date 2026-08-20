@@ -70,9 +70,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .field-full { grid-column: 1 / -1; }
 .field > span { display: flex; justify-content: space-between; color: #4f5049; font-size: 12px; font-weight: 600; }
 .field > span b { color: #8b887d; font-family: "DM Mono", monospace; font-size: 10px; font-weight: 500; }
-.field input[type="text"], .field select, textarea { width: 100%; border: 1px solid #dcd9d0; border-radius: 7px; background: #fffefa; color: #292a25; outline: none; transition: border .15s, box-shadow .15s; }
+.field input[type="text"], .field select, textarea, .preset-select { width: 100%; border: 1px solid #dcd9d0; border-radius: 7px; background: #fffefa; color: #292a25; outline: none; transition: border .15s, box-shadow .15s; }
 .field input[type="text"], .field select { height: 40px; padding: 0 11px; font-size: 13px; }
-.field input[type="text"]:focus, .field select:focus, textarea:focus, .naming-select:focus { border-color: #dc927d; box-shadow: 0 0 0 3px rgba(220,95,64,.11); }
+.field input[type="text"]:focus, .field select:focus, textarea:focus, .naming-select:focus, .preset-select:focus { border-color: #dc927d; box-shadow: 0 0 0 3px rgba(220,95,64,.11); }
 .field small { margin-top: -2px; color: #87847a; font-size: 10px; line-height: 1.45; }
 .field input[type="range"] { width: 100%; height: 18px; padding: 0; accent-color: #dc5f40; }
 .color-field { grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
@@ -205,9 +205,666 @@ textarea { flex: 1; min-height: 133px; resize: vertical; padding: 12px; color: #
 
 .modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 26px 22px; border-top: 1px solid #eae6dc; }
 
-@keyframes modalFadeIn {
-  from { opacity: 0; transform: scale(.98); }
-  to { opacity: 1; transform: scale(1); }
+/* ========================================================
+   批量打印与标签排版工作台样式
+   ======================================================== */
+.print-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(28, 26, 22, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.18s ease-out;
+}
+
+.print-modal-card {
+  width: 95vw;
+  max-width: 1280px;
+  height: 90vh;
+  background: #fdfcf9;
+  border: 1px solid #ded9cd;
+  border-radius: 14px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.print-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid #e7e2d6;
+  background: #faf8f2;
+}
+
+.header-title-block h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #242520;
+}
+
+.header-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.auto-save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #5d8c6b;
+  font-family: "DM Mono", monospace;
+  background: #edf6f0;
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+
+.auto-save-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #469b62;
+}
+
+.paper-stat-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: #f3e5dc;
+  color: #a44830;
+  font-size: 12px;
+  font-family: "DM Mono", monospace;
+}
+
+.paper-stat-badge b {
+  color: #8c3620;
+}
+
+.modal-close-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 22px;
+  color: #848074;
+  transition: all 0.12s;
+}
+
+.modal-close-btn:hover {
+  color: #20221f;
+  background: #e9e4d8;
+}
+
+.print-modal-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左侧配置栏 */
+.print-sidebar {
+  padding: 20px;
+  border-right: 1px solid #e7e2d6;
+  background: #fcfbf7;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fill-group {
+  flex: 1;
+  min-height: 180px;
+}
+
+.group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5d5a4f;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: "DM Mono", monospace;
+}
+
+.pill-segmented {
+  display: flex;
+  background: #eae5d9;
+  padding: 3px;
+  border-radius: 8px;
+  gap: 3px;
+}
+
+.pill-segmented button {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6a675c;
+  transition: all 0.12s;
+}
+
+.pill-segmented button.active {
+  background: #fff;
+  color: #b54e34;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.pill-segmented button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.preset-select {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid #dcd7cb;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2b2c27;
+}
+
+.dimension-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dim-field span {
+  font-size: 10px;
+  color: #79766c;
+  font-family: "DM Mono", monospace;
+}
+
+.dim-field input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #dcd7cb;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  font-family: "DM Mono", monospace;
+}
+
+.switch-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compact-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #4a4b44;
+  cursor: pointer;
+}
+
+.compact-switch input {
+  accent-color: #dc5f40;
+  width: 14px;
+  height: 14px;
+}
+
+.custom-note-input input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #dcd7cb;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.slider-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #55564f;
+}
+
+.slider-row input[type="range"] {
+  width: 120px;
+  accent-color: #dc5f40;
+}
+
+.mini-select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid #dcd7cb;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 11px;
+}
+
+.group-header-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-qty-tool {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #7b786f;
+}
+
+.qty-input-mini {
+  width: 44px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid #dcd7cb;
+  border-radius: 4px;
+  text-align: center;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+}
+
+.btn-micro {
+  padding: 2px 6px;
+  border: 1px solid #d7d2c5;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  color: #5e5b52;
+}
+
+.btn-micro:hover {
+  background: #f5f2e9;
+  color: #dc5f40;
+}
+
+.item-qty-scroll {
+  flex: 1;
+  min-height: 140px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e4dfd4;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.qty-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.qty-table th {
+  position: sticky;
+  top: 0;
+  background: #f7f5ed;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #6f6b60;
+  border-bottom: 1px solid #e4dfd4;
+  z-index: 1;
+}
+
+.qty-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f2eee6;
+  vertical-align: middle;
+}
+
+.name-cell {
+  max-width: 130px;
+}
+
+.name-cell b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #383933;
+}
+
+.name-cell small {
+  color: #8c897f;
+  font-family: "DM Mono", monospace;
+  font-size: 9px;
+}
+
+.table-input {
+  width: 100%;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid #e0dbd0;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid #ded9cd;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 78px;
+  height: 24px;
+}
+
+.qty-stepper button {
+  width: 22px;
+  height: 100%;
+  border: none;
+  background: #f6f3eb;
+  color: #68655c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.qty-stepper button:hover {
+  background: #ebe6da;
+}
+
+.qty-stepper input {
+  flex: 1;
+  width: 32px;
+  height: 100%;
+  border: none;
+  text-align: center;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  outline: none;
+}
+
+/* 右侧预览区 */
+.print-preview-workspace {
+  background: #eae6dd;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: #f4f0e7;
+  border-bottom: 1px solid #dfd9cb;
+}
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-nav {
+  padding: 4px 10px;
+  border: 1px solid #d4cebf;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 11px;
+  color: #55534b;
+}
+
+.btn-nav:hover:not(:disabled) {
+  background: #fbfaf8;
+  color: #dc5f40;
+}
+
+.page-indicator {
+  font-size: 12px;
+  font-family: "DM Mono", monospace;
+  color: #636158;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #79766d;
+}
+
+.zoom-controls button {
+  padding: 3px 8px;
+  border: 1px solid #d4cebf;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 10px;
+  font-family: "DM Mono", monospace;
+}
+
+.zoom-controls button.active {
+  background: #dc5f40;
+  color: #fff;
+  border-color: #dc5f40;
+}
+
+.preview-stage-container {
+  flex: 1;
+  overflow: auto;
+  padding: 30px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.virtual-paper {
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(45, 41, 32, 0.15), 0 1px 4px rgba(45, 41, 32, 0.08);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: transform 0.15s ease-out;
+}
+
+.paper-roll {
+  border-radius: 4px;
+}
+
+.paper-sheet {
+  border-radius: 2px;
+}
+
+.virtual-grid {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.virtual-label {
+  box-sizing: border-box;
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  text-align: center;
+  position: relative;
+}
+
+.border-dashed {
+  outline: 1px dashed #d0c9bc;
+}
+
+.border-solid {
+  outline: 1px solid #8e897e;
+}
+
+.border-none {
+  outline: none;
+}
+
+.label-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.label-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: #242520;
+  color: #fff;
+  border-radius: 2px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transform: scale(0.85);
+}
+
+.label-name {
+  font-size: 10px;
+  color: #1f201c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.label-barcode-box {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.label-barcode-box svg {
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+  width: auto;
+  display: block;
+}
+
+.label-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  line-height: 1;
+}
+
+.label-price {
+  font-size: 11px;
+  font-weight: 800;
+  color: #dc5f40;
+  font-family: "DM Mono", monospace;
+}
+
+.print-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #faf8f2;
+  border-top: 1px solid #e7e2d6;
+}
+
+/* 隐藏式静默打印 DOM 树 */
+.print-portal-dom {
+  display: none;
+}
+
+/* ========================================================
+   系统原生打印专用样式 (@media print)
+   ======================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 隐藏所有普通界面 */
+  .app-shell,
+  .print-modal-overlay,
+  .topbar,
+  .workspace,
+  .batch-section,
+  .results-section,
+  .statusbar {
+    display: none !important;
+  }
+
+  /* 仅展示专用打印容器 */
+  #print-portal.print-portal-dom {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-page {
+    box-sizing: border-box !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+  }
+
+  .print-label-cell {
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    text-align: center !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-label-cell .label-barcode-box svg {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+  }
 }
 
 @media (max-width: 1120px) {
@@ -217,6 +874,7 @@ textarea { flex: 1; min-height: 133px; resize: vertical; padding: 12px; color: #
   .quick-stats { gap: 17px; margin-left: 20px; }
   .workspace { grid-template-columns: .94fr 1.06fr; }
   .barcode-stage { min-height: 300px; }
+  .print-modal-body { grid-template-columns: 320px 1fr; }
 }
 
 @media (max-width: 860px) {
@@ -235,4 +893,6 @@ textarea { flex: 1; min-height: 133px; resize: vertical; padding: 12px; color: #
   .result-grid { grid-template-columns: 1fr; }
   .format-grid { grid-template-columns: 1fr; }
   .statusbar > span:last-child { display: none; }
+  .print-modal-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .print-sidebar { border-right: none; border-bottom: 1px solid #e7e2d6; }
 }

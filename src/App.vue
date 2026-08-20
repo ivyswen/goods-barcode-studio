@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, reactive } from "vue";
+import { computed, ref, reactive, watch } from "vue";
 import JsBarcode from "jsbarcode";
 import JSZip from "jszip";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import "./styles.css";
+import PrintModal from "./components/PrintModal.vue";
 import {
   type BarcodeExportItem,
   type ExportFormat,
@@ -74,6 +75,9 @@ const exportConfig = reactive({
   includeJson: false,
 });
 
+// 批量打印弹窗状态
+const isPrintModalOpen = ref(false);
+
 // 导出进度状态
 const isExporting = ref(false);
 const exportProgress = reactive({
@@ -85,6 +89,129 @@ const exportProgress = reactive({
 
 // 单条导出菜单下拉
 const showSingleDropdown = ref(false);
+const showSettingsDropdown = ref(false);
+const backupFileInput = ref<HTMLInputElement | null>(null);
+
+const UI_STORAGE_KEY = "goods_barcode_ui_settings_v1";
+
+// 加载已保存的 UI 设置
+function loadSavedUiSettings() {
+  try {
+    const raw = localStorage.getItem(UI_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed.selectedFormat) selectedFormat.value = parsed.selectedFormat;
+    if (typeof parsed.barWidth === "number") barWidth.value = parsed.barWidth;
+    if (typeof parsed.barHeight === "number") barHeight.value = parsed.barHeight;
+    if (parsed.lineColor) lineColor.value = parsed.lineColor;
+    if (parsed.backgroundColor) backgroundColor.value = parsed.backgroundColor;
+    if (typeof parsed.showText === "boolean") showText.value = parsed.showText;
+    if (parsed.productName) productName.value = parsed.productName;
+    if (parsed.barcodeValue) barcodeValue.value = parsed.barcodeValue;
+    if (parsed.exportConfig && typeof parsed.exportConfig === "object") {
+      Object.assign(exportConfig, parsed.exportConfig);
+    }
+  } catch (err) {
+    console.error("加载UI设置失败:", err);
+  }
+}
+
+// 保存 UI 设置到本地存储
+function saveUiSettings() {
+  try {
+    const payload = {
+      selectedFormat: selectedFormat.value,
+      barWidth: barWidth.value,
+      barHeight: barHeight.value,
+      lineColor: lineColor.value,
+      backgroundColor: backgroundColor.value,
+      showText: showText.value,
+      productName: productName.value,
+      barcodeValue: barcodeValue.value,
+      exportConfig: { ...exportConfig },
+    };
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.error("保存UI设置失败:", err);
+  }
+}
+
+// 深度监听所有 UI 设置，自动保存
+watch(
+  [selectedFormat, barWidth, barHeight, lineColor, backgroundColor, showText, productName, barcodeValue, exportConfig],
+  () => {
+    saveUiSettings();
+  },
+  { deep: true }
+);
+
+// 初始化加载
+loadSavedUiSettings();
+
+// 导出全量配置包（换电脑备份迁移）
+async function exportFullBackupConfig() {
+  showSettingsDropdown.value = false;
+  try {
+    const backupData = {
+      app: "goods-barcode-studio",
+      version: "0.1.0",
+      exportedAt: new Date().toISOString(),
+      uiSettings: JSON.parse(localStorage.getItem(UI_STORAGE_KEY) || "{}"),
+      printSettings: JSON.parse(localStorage.getItem("goods_barcode_print_settings_v1") || "{}"),
+    };
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const fileName = `条码工坊_配置备份_${new Date().toISOString().slice(0, 10)}.json`;
+    const payload = new TextEncoder().encode(jsonStr);
+
+    if (isTauri) {
+      const path = await save({
+        defaultPath: fileName,
+        filters: [{ name: "JSON 配置文件", extensions: ["json"] }],
+      });
+      if (!path) return;
+      await writeFile(path, payload);
+      setStatus(`已成功导出配置文件：${fileName}。在新电脑上导入该文件即可无缝恢复所有参数。`, "success");
+    } else {
+      triggerBrowserDownload(new Blob([payload], { type: "application/json" }), fileName);
+      setStatus("已下载配置文件备份包！换电脑时导入该文件即可无缝恢复所有参数。", "success");
+    }
+  } catch (error) {
+    setStatus(error instanceof Error ? `备份导出失败：${error.message}` : "导出配置失败", "error");
+  }
+}
+
+// 触发选择备份文件
+function triggerImportConfig() {
+  showSettingsDropdown.value = false;
+  backupFileInput.value?.click();
+}
+
+// 导入全量配置包（换电脑恢复）
+function handleImportConfigFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const text = e.target?.result as string;
+      const data = JSON.parse(text);
+      if (data.uiSettings) {
+        localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(data.uiSettings));
+        loadSavedUiSettings();
+      }
+      if (data.printSettings) {
+        localStorage.setItem("goods_barcode_print_settings_v1", JSON.stringify(data.printSettings));
+      }
+      setStatus("已成功导入配置！所有条码生成参数、导出习惯与打印模板均已同步恢复。", "success");
+    } catch {
+      setStatus("导入失败：所选文件不是有效的条码工坊备份配置。", "error");
+    }
+  };
+  reader.readAsText(file);
+  input.value = "";
+}
 
 // 计算属性
 const activeItem = computed(() => items.value.find((item) => item.id === activeId.value) ?? items.value[0] ?? null);
@@ -378,6 +505,18 @@ function openExportModal(scope: "all" | "selected" = "all") {
   isExportModalOpen.value = true;
 }
 
+// 打开批量打印弹窗
+function openPrintModal(scope: "all" | "selected" = "all") {
+  if (!items.value.length) {
+    setStatus("暂无生成的条码可供打印。", "error");
+    return;
+  }
+  if (scope === "all") {
+    selectedIds.value.clear();
+  }
+  isPrintModalOpen.value = true;
+}
+
 // 执行批量导出逻辑
 async function executeBatchExport() {
   const targetList = exportTargetItems.value;
@@ -535,6 +674,35 @@ async function executeBatchExport() {
       </div>
       <div class="topbar-actions">
         <span class="desktop-badge">{{ isTauri ? "桌面专业版" : "浏览器环境" }}</span>
+        
+        <div class="dropdown-wrap">
+          <button
+            class="button button-secondary"
+            @click="showSettingsDropdown = !showSettingsDropdown"
+            title="配置备份与换电脑迁移"
+          >
+            <span>⚙️</span> 备份/迁移 ▾
+          </button>
+          <div v-if="showSettingsDropdown" class="dropdown-menu" style="right: 0; left: auto; min-width: 220px;">
+            <button @click="exportFullBackupConfig">💾 导出配置备份包 (.json)</button>
+            <button @click="triggerImportConfig">📂 导入配置备份包 (换电脑)</button>
+          </div>
+        </div>
+        <input
+          ref="backupFileInput"
+          type="file"
+          accept=".json"
+          style="display: none"
+          @change="handleImportConfigFile"
+        />
+
+        <button
+          class="button button-secondary"
+          :disabled="!items.length || busy"
+          @click="openPrintModal(selectedIds.size > 0 ? 'selected' : 'all')"
+        >
+          <span>🖨️</span> 批量打印 {{ selectedIds.size > 0 ? `(${selectedIds.size})` : items.length ? `(${items.length})` : '' }}
+        </button>
         <button
           class="button button-primary"
           :disabled="!items.length || busy"
@@ -550,7 +718,7 @@ async function executeBatchExport() {
         <p class="eyebrow">BARCODE VECTOR & HD BITMAP STUDIO</p>
         <h2>为每一件商品，建立清晰的身份。</h2>
         <p>
-          支持单条精细设计与 500+ 条批量生成。支持 <strong>SVG 无损矢量</strong>、<strong>PNG 高清/超清位图</strong>、<strong>JPG</strong>、<strong>WebP</strong> 及 <strong>CSV Excel 清单</strong> 多格式批量导出。
+          支持单条精细设计与 500+ 条批量生成。支持 <strong>SVG 无损矢量</strong>、<strong>PNG 高清/超清位图</strong>、<strong>JPG</strong>、<strong>WebP</strong>、<strong>CSV Excel 清单</strong> 多格式批量导出，以及 <strong>热敏标签/A4拼版批量打印</strong>。
         </p>
       </div>
       <dl class="quick-stats">
@@ -559,8 +727,8 @@ async function executeBatchExport() {
           <dd>Code 128 · EAN · UPC</dd>
         </div>
         <div>
-          <dt>导出格式</dt>
-          <dd>SVG / PNG / JPG / WebP / CSV</dd>
+          <dt>导出与打印</dt>
+          <dd>SVG / PNG / CSV / 批量打印</dd>
         </div>
       </dl>
     </section>
@@ -656,6 +824,13 @@ async function executeBatchExport() {
 
         <div class="preview-actions">
           <div class="action-btn-group" v-if="activeItem">
+            <button
+              class="button button-primary"
+              :disabled="busy"
+              @click="selectedIds.clear(); selectedIds.add(activeItem.id); openPrintModal('selected')"
+            >
+              🖨️ 打印标签
+            </button>
             <button class="button button-secondary" :disabled="busy" @click="exportSingleItem(activeItem, 'svg')">
               导出 SVG
             </button>
@@ -664,7 +839,7 @@ async function executeBatchExport() {
             </button>
             <div class="dropdown-wrap">
               <button class="button button-secondary dropdown-toggle" @click="showSingleDropdown = !showSingleDropdown">
-                更多格式 ▾
+                更多 ▾
               </button>
               <div v-if="showSingleDropdown" class="dropdown-menu">
                 <button @click="exportSingleItem(activeItem, 'png', 4)">PNG 4x (300DPI 印刷)</button>
@@ -698,7 +873,7 @@ async function executeBatchExport() {
         <div class="batch-tips">
           <span>最多 500 条</span>
           <span>自动校验 EAN / UPC</span>
-          <span>多格式一键导出</span>
+          <span>支持多格式导出与批量打印</span>
         </div>
       </div>
       <div class="batch-input-wrap">
@@ -737,6 +912,14 @@ async function executeBatchExport() {
           </label>
 
           <button
+            class="button button-secondary button-sm"
+            :disabled="busy"
+            @click="openPrintModal(selectedCount > 0 ? 'selected' : 'all')"
+          >
+            🖨️ 批量打印 {{ selectedCount > 0 ? `(${selectedCount})` : `全部 (${items.length})` }}
+          </button>
+
+          <button
             class="button button-primary button-sm"
             :disabled="busy"
             @click="openExportModal(selectedCount > 0 ? 'selected' : 'all')"
@@ -770,7 +953,7 @@ async function executeBatchExport() {
               type="checkbox"
               :checked="selectedIds.has(item.id)"
               @change="toggleSelect(item.id)"
-              :title="selectedIds.has(item.id) ? '取消勾选' : '勾选加入批量导出'"
+              :title="selectedIds.has(item.id) ? '取消勾选' : '勾选加入批量操作'"
             />
           </div>
 
@@ -780,6 +963,7 @@ async function executeBatchExport() {
             <p>{{ item.value }} · {{ item.format }}</p>
           </div>
           <div class="card-actions">
+            <button class="icon-button" title="打印该标签" @click.stop="selectedIds.clear(); selectedIds.add(item.id); openPrintModal('selected')">🖨️</button>
             <button class="icon-button" title="导出 SVG" @click.stop="exportSingleItem(item, 'svg')">SVG</button>
             <button class="icon-button" title="导出 PNG 高清图" @click.stop="exportSingleItem(item, 'png', 2)">PNG</button>
             <button class="icon-button danger-icon" title="移除该项" @click.stop="removeItem(item.id)">×</button>
@@ -787,7 +971,7 @@ async function executeBatchExport() {
         </article>
       </div>
       <div v-else class="library-empty">
-        尚未生成条形码。单个生成或批量生成后的结果将保存在这里，支持随时多格式批量导出。
+        尚未生成条形码。单个生成或批量生成后的结果将保存在这里，支持随时多格式批量导出与排版打印。
       </div>
     </section>
 
@@ -795,7 +979,7 @@ async function executeBatchExport() {
     <footer class="statusbar" :class="`status-${statusKind}`">
       <span class="status-dot"></span>
       <p>{{ status }}</p>
-      <span>本地计算 · 多格式矢量/高清输出</span>
+      <span>本地计算 · 多格式矢量/高清输出 · 毫米级批量打印</span>
     </footer>
 
     <!-- 批量导出模态弹窗 -->
@@ -969,5 +1153,13 @@ async function executeBatchExport() {
         </div>
       </div>
     </div>
+
+    <!-- 批量打印与标签排版工作台模态框 -->
+    <PrintModal
+      :is-open="isPrintModalOpen"
+      :items="items"
+      :selected-ids="selectedIds"
+      @close="isPrintModalOpen = false"
+    />
   </main>
 </template>
