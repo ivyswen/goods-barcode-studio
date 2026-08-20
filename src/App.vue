@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, reactive, watch } from "vue";
+import { computed, ref, reactive, watch, onMounted, nextTick } from "vue";
 import JsBarcode from "jsbarcode";
 import JSZip from "jszip";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./styles.css";
 import PrintModal from "./components/PrintModal.vue";
 import {
@@ -147,6 +148,24 @@ watch(
 
 // 初始化加载
 loadSavedUiSettings();
+
+// 优雅展示：等待 DOM 挂载和页面首帧完成渲染后再展示窗口，彻底消除启动白屏与闪烁
+onMounted(async () => {
+  if (isTauri) {
+    try {
+      const appWindow = getCurrentWebviewWindow();
+      await nextTick();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(async () => {
+          await appWindow.show();
+          await appWindow.setFocus();
+        });
+      });
+    } catch (e) {
+      console.warn("Tauri 窗口显示异常:", e);
+    }
+  }
+});
 
 // 导出全量配置包（换电脑备份迁移）
 async function exportFullBackupConfig() {
